@@ -1,83 +1,26 @@
-name: wordpress
-
-# WordPress + MariaDB untuk VPS, diakses lewat Cloudflare Tunnel.
+# Satu situs WordPress. Database ada di stack ../mysql (MySQL bersama).
 #
-# - Hanya WordPress yang punya port, dan itu pun cuma di 127.0.0.1, jadi
-#   satu-satunya jalan masuk dari internet adalah tunnel (HTTPS di Cloudflare).
-# - MariaDB ada di network internal tanpa akses keluar dan tanpa port.
-# - Password tidak ada di environment; dibaca dari ./secrets lewat *_FILE.
-# - Kedua container read-only, tanpa capability tambahan, no-new-privileges,
-#   dan dibatasi memori/PID supaya tidak bisa menghabiskan resource BE & CMS.
+# Untuk situs tambahan: salin folder ini (misal ke ~/wp-toko), ubah .env
+# (COMPOSE_PROJECT_NAME, SITE_NAME, WP_DOMAIN, WP_PORT), lalu ./setup.sh.
 #
-# Jalankan ./setup.sh sekali sebelum `docker compose up -d`.
-
-x-hardening: &hardening
-  restart: unless-stopped
-  security_opt:
-    - no-new-privileges:true
-  logging:
-    driver: json-file
-    options:
-      max-size: "10m"
-      max-file: "3"
+# - Port hanya di 127.0.0.1; dari internet hanya bisa lewat Cloudflare Tunnel.
+# - Ke MySQL lewat network internal `mysql_shared`; password dari file (*_FILE).
+# - Container read-only, capability minimal, no-new-privileges, batas RAM/PID.
 
 services:
-  db:
-    <<: *hardening
-    image: mariadb:11.4
-    environment:
-      MARIADB_DATABASE: wordpress
-      MARIADB_USER: wordpress
-      MARIADB_PASSWORD_FILE: /run/secrets/db_password
-      MARIADB_ROOT_PASSWORD_FILE: /run/secrets/db_root_password
-      MARIADB_AUTO_UPGRADE: "1"
-      TZ: ${TZ:-Asia/Jakarta}
-    command:
-      - --character-set-server=utf8mb4
-      - --collation-server=utf8mb4_unicode_ci
-      - --innodb-buffer-pool-size=128M
-      - --max-connections=50
-      - --performance-schema=OFF
-      - --skip-name-resolve
-      - --local-infile=0
-    secrets:
-      - db_password
-      - db_root_password
-    volumes:
-      - db_data:/var/lib/mysql
-    tmpfs:
-      - /run/mysqld
-      - /tmp
-    read_only: true
-    cap_drop: [ALL]
-    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
-    mem_limit: 384m
-    pids_limit: 200
-    networks:
-      - backend
-    healthcheck:
-      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 30s
-
   wordpress:
-    <<: *hardening
     image: wordpress:6-php8.3-apache
-    depends_on:
-      db:
-        condition: service_healthy
+    restart: unless-stopped
     environment:
-      WORDPRESS_DB_HOST: db
-      WORDPRESS_DB_NAME: wordpress
-      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_HOST: mysql
+      WORDPRESS_DB_NAME: wp_${SITE_NAME:?SITE_NAME wajib diisi di .env}
+      WORDPRESS_DB_USER: wp_${SITE_NAME}
       WORDPRESS_DB_PASSWORD_FILE: /run/secrets/db_password
       WORDPRESS_TABLE_PREFIX: ${WP_TABLE_PREFIX:?jalankan ./setup.sh dulu}
       TZ: ${TZ:-Asia/Jakarta}
       # $$ supaya compose tidak menganggap $_SERVER sebagai variabel.
       WORDPRESS_CONFIG_EXTRA: |
-        define('WP_HOME', 'https://${WP_DOMAIN:?WP_DOMAIN wajib diisi}');
+        define('WP_HOME', 'https://${WP_DOMAIN:?WP_DOMAIN wajib diisi di .env}');
         define('WP_SITEURL', 'https://${WP_DOMAIN}');
         // HTTPS ditangani Cloudflare; tanpa ini login/CSS bisa redirect berulang.
         if (($$_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https') { $$_SERVER['HTTPS'] = 'on'; }
@@ -99,15 +42,22 @@ services:
       - /run/apache2
       - /run/lock/apache2
     read_only: true
+    security_opt:
+      - no-new-privileges:true
     cap_drop: [ALL]
     cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID, NET_BIND_SERVICE]
     mem_limit: 512m
     pids_limit: 200
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     ports:
-      - "127.0.0.1:${WP_PORT:-8090}:80"
+      - "127.0.0.1:${WP_PORT:?WP_PORT wajib diisi di .env}:80"
     networks:
-      - backend
-      - frontend
+      - default
+      - mysql
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS -o /dev/null http://localhost/wp-includes/images/blank.gif || exit 1"]
       interval: 30s
@@ -116,18 +66,16 @@ services:
       start_period: 30s
 
 networks:
-  # Tanpa akses internet: hanya WordPress yang bisa bicara ke MariaDB.
-  backend:
-    internal: true
-  # WordPress butuh internet untuk update core/plugin/tema.
-  frontend: {}
+  # Network bawaan proyek ini; dipakai untuk akses internet (update plugin/tema).
+  default: {}
+  # Dibuat oleh stack ../mysql.
+  mysql:
+    name: mysql_shared
+    external: true
 
 volumes:
-  db_data:
   wp_data:
 
 secrets:
   db_password:
     file: ./secrets/db_password.txt
-  db_root_password:
-    file: ./secrets/db_root_password.txt

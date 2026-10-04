@@ -1,32 +1,28 @@
 #!/usr/bin/env sh
-# Sekali jalan: buat .env dan password acak. Aman dijalankan ulang;
-# file yang sudah ada tidak ditimpa (password lama tetap dipakai DB).
+# Siapkan satu situs: isi prefix tabel, lalu buat database + user di MySQL
+# bersama. Butuh .env (salin dari .env.example) dan stack ../mysql sudah jalan.
+# Aman dijalankan ulang.
 set -eu
 cd "$(dirname "$0")"
 
+MYSQL_DIR="${MYSQL_DIR:-$HOME/mysql}"
+
 if [ ! -f .env ]; then
+  echo "Belum ada .env. Jalankan: cp .env.example .env, sesuaikan isinya, lalu ./setup.sh lagi." >&2
+  exit 1
+fi
+chmod 600 .env
+
+if grep -q '^WP_TABLE_PREFIX=$' .env; then
   prefix="wp_$(openssl rand -hex 3)_"
-  sed "s/^WP_TABLE_PREFIX=.*/WP_TABLE_PREFIX=${prefix}/" .env.example > .env
-  chmod 600 .env
-  echo "Dibuat: .env (prefix tabel ${prefix})"
-else
-  echo "Lewati: .env sudah ada"
+  sed -i.bak "s/^WP_TABLE_PREFIX=$/WP_TABLE_PREFIX=${prefix}/" .env && rm -f .env.bak
+  echo "Prefix tabel: ${prefix}"
 fi
 
-mkdir -p secrets
-chmod 700 secrets
-for name in db_password db_root_password; do
-  f="secrets/${name}.txt"
-  if [ ! -s "$f" ]; then
-    openssl rand -hex 24 | tr -d '\n' > "$f"
-    echo "Dibuat: $f"
-  else
-    echo "Lewati: $f sudah ada"
-  fi
-  # Dibaca oleh user di dalam container (mysql/www-data); folder secrets/
-  # tetap 700 sehingga user lain di host tidak bisa masuk.
-  chmod 644 "$f"
-done
+site="$(sed -n 's/^SITE_NAME=//p' .env)"
+[ -x "$MYSQL_DIR/create-db.sh" ] || { echo "Tidak ketemu $MYSQL_DIR/create-db.sh (set MYSQL_DIR kalau lokasinya lain)" >&2; exit 1; }
+
+"$MYSQL_DIR/create-db.sh" "$site" "$PWD/secrets/db_password.txt"
 
 echo
-echo "Cek WP_DOMAIN di .env, lalu jalankan: docker compose up -d"
+echo "Jalankan: docker compose up -d"
