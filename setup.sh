@@ -22,7 +22,7 @@ fi
 site="$(sed -n 's/^SITE_NAME=//p' .env)"
 [ -x "$MYSQL_DIR/create-db.sh" ] || { echo "Tidak ketemu $MYSQL_DIR/create-db.sh (set MYSQL_DIR kalau lokasinya lain)" >&2; exit 1; }
 
-"$MYSQL_DIR/create-db.sh" "$site" "$PWD/secrets/db_password.txt"
+"$MYSQL_DIR/create-db.sh" "wp_${site}" "$PWD/secrets/db_password.txt"
 
 echo
 echo "Jalankan: docker compose up -d"
