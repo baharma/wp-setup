@@ -1,0 +1,64 @@
+name: mysql
+
+# Satu MySQL untuk semua aplikasi di VPS ini (WordPress, Laravel, dll).
+#
+# - Tidak ada port ke host. Aplikasi masuk lewat network `mysql_shared`
+#   (internal, tanpa akses internet) dan memanggil host `mysql`.
+# - Tiap aplikasi punya database + user sendiri, dibuat dengan ./create-db.sh;
+#   user itu hanya punya hak atas database-nya sendiri.
+# - Password root dibaca dari ./secrets lewat *_FILE.
+#
+# Jalankan ./setup.sh sekali sebelum `docker compose up -d`.
+
+services:
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD_FILE: /run/secrets/mysql_root_password
+      TZ: ${TZ:-Asia/Jakarta}
+    secrets:
+      - mysql_root_password
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./config/my.cnf:/etc/mysql/conf.d/zz-server.cnf:ro
+    tmpfs:
+      - /var/run/mysqld
+      - /tmp
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID, SYS_NICE]
+    mem_limit: 768m
+    pids_limit: 300
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # Aplikasi di Docker tidak butuh port; cukup ikut network mysql_shared.
+    # Buka baris ini hanya kalau ada aplikasi yang jalan langsung di host.
+    # ports:
+    #   - "127.0.0.1:3306:3306"
+    networks:
+      - shared
+    healthcheck:
+      # ping tetap sukses walau tanpa password selama server hidup.
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "--silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+
+networks:
+  shared:
+    name: mysql_shared
+    internal: true
+
+volumes:
+  mysql_data:
+
+secrets:
+  mysql_root_password:
+    file: ./secrets/mysql_root_password.txt
