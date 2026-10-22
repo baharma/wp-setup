@@ -14,7 +14,8 @@ Cloudflare Tunnel `server-baharma`; tidak ada port yang terbuka ke internet.
 
 | File | Fungsi |
 |---|---|
-| `docker-compose.yml` | Service `wordpress` (PHP 8.3 + Apache), tersambung ke MySQL bersama |
+| `docker-compose.yml` | Service `wordpress` (image lokal, PHP 8.3.36 + Apache), tersambung ke MySQL bersama |
+| `image/Dockerfile` | Build dari PHP 8.3.36 dan memakai file WordPress resmi |
 | `.env.example` | Nama situs, domain, port; tanpa password |
 | `setup.sh` | Isi prefix tabel acak, buat database + user di MySQL bersama |
 | `config/php.ini` | Hardening PHP, upload maksimal 64 MB |
@@ -59,7 +60,7 @@ Di VPS:
    Cek isi `.env` (`SITE_NAME`, `WP_DOMAIN`, `WP_PORT`), lalu:
 
    ```bash
-   chmod +x setup.sh && ./setup.sh && docker compose up -d
+   chmod +x setup.sh && ./setup.sh && docker compose up -d --build
    ```
 
 3. Tes dari VPS. Hasil `302` ke `/wp-admin/install.php` berarti siap:
@@ -130,9 +131,18 @@ Simpan juga isi `~/mysql/secrets/` dan `secrets/` tiap situs di tempat aman.
 
 ## Update
 
+Build image WordPress lokal dari base PHP yang sudah dipatch, lalu buat ulang
+container situs:
+
 ```bash
-cd ~/wp-blog && docker compose pull && docker compose up -d
+cd ~/wp-blog && git pull && docker compose build --pull wordpress && docker compose up -d --force-recreate wordpress
+docker compose exec wordpress php -v
 ```
 
-MySQL di-update dari `~/mysql` dengan perintah yang sama. Tetap di `mysql:8.4`;
-lompat ke versi mayor lain perlu backup dulu.
+Pastikan versinya `PHP 8.3.36` atau lebih baru. `docker compose pull` tidak
+digunakan untuk service WordPress karena imagenya dibangun lokal; `--pull`
+memperbarui base PHP dan image WordPress resmi yang dipakai saat build.
+
+Update MySQL secara terpisah dari `~/mysql` dengan `docker compose pull &&
+docker compose up -d`. Tetap di `mysql:8.4`; lompat ke versi mayor lain perlu
+backup dulu.

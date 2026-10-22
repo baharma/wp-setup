@@ -9,7 +9,11 @@
 
 services:
   wordpress:
-    image: wordpress:6-php8.3-apache
+    image: wp-${SITE_NAME}:php8.3.36
+    build:
+      context: ./image
+      dockerfile: Dockerfile
+      pull: true
     restart: unless-stopped
     environment:
       WORDPRESS_DB_HOST: mysql
