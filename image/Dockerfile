@@ -10,8 +10,6 @@ RUN apt-get update \
         ghostscript \
         libavif15 \
         libfreetype6 \
-        libheif-plugin-aomenc \
-        libheif-plugin-x265 \
         libicu72 \
         libjpeg62-turbo \
         libmagickwand-6.q16-6 \
